@@ -111,4 +111,4 @@ Ask Copper answers setup, troubleshooting, warranty and policy questions only fr
 | Panel | `components/copper/ask-copper.tsx` | `CitedText` turns each `[Title, p. N]` into a link to that PDF page |
 | AI calls | `{ module: 3, feature: "search-docs" }`, `{ module: 3, feature: "docs-index" }` | One embedding call per search; `callEmbed` / `callEmbedMany` in `lib/ai/call.ts` |
 
-Model: this Google key can't use `gemini-2.5-flash` (Google closed it to new users), so `AI_MODEL=google/gemini-3-flash` is set in `.env.local` and on Vercel.
+Model: this Google key can't use `gemini-2.5-flash` (Google closed it to new users) and the free tier allows only 20 requests a day per model, so `google/gemini-3.6-flash` was added to `lib/ai/models.ts` and `AI_MODEL=google/gemini-3.6-flash` is set in `.env.local` and on Vercel. Google returns no token count for embeddings, so those `ai_calls` rows show `input_tokens: null`.
