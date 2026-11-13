@@ -9,6 +9,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   BrainIcon,
+  FileTextIcon,
   MessageCircleIcon,
   TriangleAlertIcon,
   WrenchIcon,
@@ -34,12 +35,14 @@ import {
   TOOL_LABELS,
 } from "@/lib/copper/assistant/progress";
 import { formatUsd, getPlans, getProducts } from "@/lib/copper/catalog";
+import { DOCUMENTS } from "@/lib/copper/documents";
 import { cn } from "@/lib/utils";
 
 const STARTERS = [
   "How much is Copper Home with Copper Plus, paid yearly, for 2 years?",
   "Is Copper Notes in Night Sky in stock?",
   "Is Copper Plus cheaper monthly or yearly?",
+  "My Copper Home shows C-47. What should I do?",
 ];
 
 type Turn = { question: string; progress: Progress };
@@ -148,7 +151,7 @@ export function AskCopper({ aiConfigured }: { aiConfigured: boolean }) {
                   Ask Copper
                 </SheetTitle>
                 <SheetDescription className="text-xs text-white/70">
-                  Prices, totals and stock, checked with tools.
+                  Prices, stock and support answers, checked with tools.
                 </SheetDescription>
               </div>
               <SheetClose asChild>
@@ -197,8 +200,8 @@ export function AskCopper({ aiConfigured }: { aiConfigured: boolean }) {
                   <div className="space-y-2">
                     {turns.length === 0 && (
                       <p className="text-muted-foreground text-sm">
-                        Hi, I&apos;m Copper! Ask me about prices, totals or
-                        stock. Try one of these:
+                        Hi, I&apos;m Copper! Ask me about prices, stock, setup,
+                        troubleshooting or our policies. Try one of these:
                       </p>
                     )}
                     {STARTERS.map((starter) => (
@@ -225,7 +228,7 @@ export function AskCopper({ aiConfigured }: { aiConfigured: boolean }) {
                   aria-label="Your question"
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Ask about prices or stock…"
+                  placeholder="Ask about prices, stock or support…"
                   className="bg-background focus-visible:ring-ring h-10 flex-1 rounded-full border px-4 text-sm outline-none focus-visible:ring-2"
                 />
                 <Button
@@ -383,7 +386,7 @@ function Answer({
             </div>
           )}
           <p className="text-sm whitespace-pre-wrap">
-            {reply}
+            <CitedText text={reply} />
             {working && (
               <span className="bg-primary ml-0.5 inline-block h-4 w-0.5 animate-pulse align-middle" />
             )}
@@ -605,6 +608,36 @@ function ToolOutput({ name, output }: { name: string; output: any }) {
       </div>
     );
   }
+  if (name === "search_docs" && Array.isArray(output?.results))
+    return (
+      <ol className="space-y-2 text-xs">
+        {output.results.map((r: any, i: number) => (
+          <li
+            key={`${r.url}-${i}`}
+            data-testid="doc-result"
+            className="bg-background rounded-lg border p-2"
+          >
+            <div className="flex items-center gap-1.5 font-medium">
+              <FileTextIcon className="text-accent size-3.5 shrink-0" />
+              <a
+                href={r.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2"
+              >
+                {r.title}, p. {r.page}
+              </a>
+              <span className="text-muted-foreground ml-auto font-mono">
+                {Number(r.score).toFixed(2)}
+              </span>
+            </div>
+            <p className="text-muted-foreground mt-1 line-clamp-3">
+              {String(r.text).replace(/^[^:]+, page \d+: /, "")}
+            </p>
+          </li>
+        ))}
+      </ol>
+    );
   // A tool without its own layout yet: show what came back as plain text.
   return (
     <pre className="max-h-48 overflow-auto text-xs whitespace-pre-wrap">
@@ -654,4 +687,34 @@ function Pill({
       {children}
     </span>
   );
+}
+
+// "[Copper Home User Guide, p. 9]" → a link that opens that PDF at page 9.
+const CITATION = /\[([^[\]]+?), p\. (\d+)\]/g;
+
+/** Copper's reply, with each citation turned into a link to the cited page. */
+function CitedText({ text }: { text: string }) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(CITATION)) {
+    const [whole, title, page] = match;
+    const doc = DOCUMENTS.find((d) => d.title === title.trim());
+    if (!doc) continue;
+    parts.push(text.slice(last, match.index));
+    parts.push(
+      <a
+        key={match.index}
+        href={`${doc.file}#page=${page}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="citation"
+        className="text-primary font-medium underline underline-offset-2"
+      >
+        {whole}
+      </a>,
+    );
+    last = match.index + whole.length;
+  }
+  parts.push(text.slice(last));
+  return <>{parts}</>;
 }

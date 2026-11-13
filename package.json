@@ -14,7 +14,9 @@
     "test": "vitest run",
     "format": "prettier --write .",
     "start-module": "node scripts/start-module.mjs",
-    "env:check": "node scripts/check-env.mjs"
+    "env:check": "node scripts/check-env.mjs",
+    "docs:index": "node --env-file=.env.local --import tsx scripts/build-docs-index.ts",
+    "docs:search": "node --env-file=.env.local --import tsx scripts/search-docs.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.93",
@@ -61,7 +63,9 @@
     "jsdom": "30.1.2",
     "prettier": "3.9.10",
     "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
+    "unpdf": "1.9.1",
     "vitest": "5.0.3"
   }
 }

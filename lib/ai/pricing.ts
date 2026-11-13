@@ -15,3 +15,6 @@ export function costUsd(
   const price = PRICING[model];
   return (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
 }
+
+/** gemini-embedding-001: US dollars per million input tokens (2026-10 list price). */
+export const EMBEDDING_PRICE_PER_MTOK = 0.15;

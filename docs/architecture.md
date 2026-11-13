@@ -96,3 +96,19 @@ each step. Module 3 teaches it to answer from the customer documents.
 | Instructions | `lib/copper/assistant/instructions.ts` | `COPPER_INSTRUCTIONS`. Copper says it can't help yet with warranty, setup, troubleshooting or privacy |
 | Data | `lib/copper/inventory.ts`, `lib/copper/documents.ts` | Stock from `lib/copper/data/inventory.json`; `DOCUMENTS`: the four customer documents and their PDF paths under `public/docs/`. The PDFs are added in class |
 | AI calls | `{ module: 2, feature: "ask-copper" }` | One streamed call per question |
+
+## Module 3: Support answers from the PDFs (RAG)
+
+Ask Copper answers setup, troubleshooting, warranty and policy questions only from the four customer PDFs, with a citation on every sentence.
+
+| Part | Where | What it does |
+|---|---|---|
+| Chunking | `lib/copper/docs/chunk.ts` | Cleans each PDF page, splits it into sentences and groups 3 at a time (one sentence of overlap). Each passage keeps its title and page, and its text starts with the title |
+| Index build | `scripts/build-docs-index.ts` (`npm run docs:index`) | Reads `public/docs/*.pdf` with `unpdf`, embeds every passage with `gemini-embedding-001` (768 dimensions, free-tier batches of 90) and writes `lib/copper/data/docs-index.json`. Rerun when a PDF changes |
+| Search | `lib/copper/docs/search.ts` | Imports the JSON (bundled, loaded into memory at start-up), embeds the question and returns the 5 closest passages by cosine similarity, each with title, page, `citation` and a `/docs/<file>.pdf#page=N` link |
+| Tool | `search_docs` in `lib/copper/assistant/tools.ts` | Runs the search; the panel shows the 5 passages with page links |
+| Instructions | `lib/copper/assistant/instructions.ts` | Support answers only from `search_docs`, a `[Title, p. N]` citation on every sentence, otherwise "I couldn't find that in our support docs" |
+| Panel | `components/copper/ask-copper.tsx` | `CitedText` turns each `[Title, p. N]` into a link to that PDF page |
+| AI calls | `{ module: 3, feature: "search-docs" }`, `{ module: 3, feature: "docs-index" }` | One embedding call per search; `callEmbed` / `callEmbedMany` in `lib/ai/call.ts` |
+
+Model: this Google key can't use `gemini-2.5-flash` (Google closed it to new users), so `AI_MODEL=google/gemini-3-flash` is set in `.env.local` and on Vercel.

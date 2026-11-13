@@ -1,8 +1,8 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText, Output, streamText } from "ai";
+import { embed, embedMany, generateText, Output, streamText } from "ai";
 import type { z } from "zod";
 import { defaultModel, MODELS, type ModelId } from "@/lib/ai/models";
-import { costUsd } from "@/lib/ai/pricing";
+import { costUsd, EMBEDDING_PRICE_PER_MTOK } from "@/lib/ai/pricing";
 
 // Every model call in the app goes through this file, so each one is logged
 // with its tokens, cost and how long it took. The log goes to the terminal
@@ -33,10 +33,15 @@ type TextOptions = DistributiveOmit<
   "model" | "output"
 >;
 
+/** The embedding model used for document search (Module 3). */
+export const EMBEDDING_MODEL = "google/gemini-embedding-001";
+/** Vector length: 768 keeps the index small and is one of Google's sizes. */
+export const EMBEDDING_DIMENSIONS = 768;
+
 export type AiCallRow = {
   module: number;
   feature: string;
-  model: ModelId;
+  model: ModelId | typeof EMBEDDING_MODEL;
   input_tokens: number | null;
   output_tokens: number | null;
   cost_usd: number | null;
@@ -45,15 +50,20 @@ export type AiCallRow = {
   created_at: string;
 };
 
-function languageModel(model: ModelId) {
+function googleProvider() {
   const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
   if (!googleKey) throw new AiNotConfiguredError();
+  return createGoogleGenerativeAI({ apiKey: googleKey });
+}
+
+function languageModel(model: ModelId) {
+  const google = googleProvider();
   const entry = MODELS.find((m) => m.id === model);
   const id =
     entry && "googleId" in entry
       ? entry.googleId
       : model.slice("google/".length);
-  return createGoogleGenerativeAI({ apiKey: googleKey })(id);
+  return google(id);
 }
 
 /** Prints one line per model call, so the cost and time are visible. */
@@ -158,3 +168,79 @@ const THINKING = { includeThoughts: true, thinkingBudget: 1024 };
 export const THOUGHT_SUMMARIES = {
   google: { thinkingConfig: THINKING },
 };
+
+/** What the embedding is for: stored passages, or a question searching them. */
+export type EmbedPurpose = "document" | "query";
+
+function embeddingOptions(purpose: EmbedPurpose) {
+  return {
+    google: {
+      outputDimensionality: EMBEDDING_DIMENSIONS,
+      taskType:
+        purpose === "document" ? "RETRIEVAL_DOCUMENT" : "RETRIEVAL_QUERY",
+    },
+  } as const;
+}
+
+function embeddingModel() {
+  return googleProvider().embedding(EMBEDDING_MODEL.slice("google/".length));
+}
+
+async function trackedEmbedding<T extends { usage: { tokens?: number } }>(
+  info: Omit<CallInfo, "model">,
+  run: () => Promise<T>,
+): Promise<T> {
+  const started = performance.now();
+  const row = (ok: boolean, tokens: number | null): AiCallRow => ({
+    module: info.module,
+    feature: info.feature,
+    model: EMBEDDING_MODEL,
+    input_tokens: tokens,
+    output_tokens: tokens === null ? null : 0,
+    cost_usd:
+      tokens === null ? null : (tokens * EMBEDDING_PRICE_PER_MTOK) / 1_000_000,
+    latency_ms: Math.round(performance.now() - started),
+    ok,
+    created_at: new Date().toISOString(),
+  });
+  try {
+    const result = await run();
+    await logCall(row(true, result.usage.tokens ?? null));
+    return result;
+  } catch (error) {
+    if (!(error instanceof AiNotConfiguredError))
+      await logCall(row(false, null));
+    throw error;
+  }
+}
+
+/** Turns one text into a vector. Example: callEmbed({ module: 3, feature: "search-docs" }, question, "query") */
+export async function callEmbed(
+  info: Omit<CallInfo, "model">,
+  value: string,
+  purpose: EmbedPurpose,
+) {
+  return trackedEmbedding(info, () =>
+    embed({
+      model: embeddingModel(),
+      value,
+      providerOptions: embeddingOptions(purpose),
+    }),
+  );
+}
+
+/** Turns many texts into vectors, in batches. */
+export async function callEmbedMany(
+  info: Omit<CallInfo, "model">,
+  values: string[],
+  purpose: EmbedPurpose,
+) {
+  return trackedEmbedding(info, () =>
+    embedMany({
+      model: embeddingModel(),
+      values,
+      maxParallelCalls: 1,
+      providerOptions: embeddingOptions(purpose),
+    }),
+  );
+}
